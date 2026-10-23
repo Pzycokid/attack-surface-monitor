@@ -1,0 +1,37 @@
+name: attack-surface-monitor
+
+on:
+  schedule:
+    - cron: "30 3 * * *"   # daily at 03:30 UTC (09:00 IST)
+  workflow_dispatch:
+
+jobs:
+  monitor:
+    if: ${{ vars.ASM_SCOPE != '' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Restore previous snapshots
+        uses: actions/cache@v4
+        with:
+          path: data
+          key: asm-data-${{ github.run_id }}
+          restore-keys: asm-data-
+      - name: Write scope file
+        run: printf '%s\n' "${{ vars.ASM_SCOPE }}" > scope.txt
+      - name: Run monitor
+        id: run
+        run: python3 -m asm.monitor --scope scope.txt --data data || echo "code=$?" >> "$GITHUB_OUTPUT"
+      - name: Upload reports
+        uses: actions/upload-artifact@v4
+        with:
+          name: asm-reports
+          path: data/*-report.md
+      - name: Fail if new live hosts appeared
+        if: steps.run.outputs.code == '2'
+        run: |
+          echo "::warning::New live hosts found. Check the asm-reports artifact."
+          exit 1
